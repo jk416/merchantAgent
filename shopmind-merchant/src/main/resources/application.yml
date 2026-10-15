@@ -1,0 +1,28 @@
+server:
+  port: 9101
+
+spring:
+  application:
+    name: shopmind-merchant
+  datasource:
+    url: jdbc:mysql://localhost:3307/shopmind_merchant?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: shopmind
+    password: ${DB_PASSWORD:shopmind123}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: ${REDIS_PASSWORD:redis123}
+      timeout: 3s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

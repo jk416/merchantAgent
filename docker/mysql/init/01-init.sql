@@ -1,0 +1,10 @@
+-- 每个微服务一个独立数据库，保证边界清晰与不跨库 JOIN
+CREATE DATABASE IF NOT EXISTS shopmind_merchant DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE DATABASE IF NOT EXISTS shopmind_product  DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE DATABASE IF NOT EXISTS shopmind_order    DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+CREATE DATABASE IF NOT EXISTS shopmind_ai       DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;
+
+-- 创建应用专用账号并赋予对应权限
+CREATE USER IF NOT EXISTS 'shopmind'@'%' IDENTIFIED BY 'shopmind123';
+GRANT ALL PRIVILEGES ON `shopmind\_%`.* TO 'shopmind'@'%';
+FLUSH PRIVILEGES;
