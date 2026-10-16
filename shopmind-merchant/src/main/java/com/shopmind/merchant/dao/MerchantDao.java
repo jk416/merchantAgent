@@ -1,8 +1,8 @@
 package com.shopmind.merchant.dao;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.shopmind.merchant.entity.MerchantDO;
-import org.springframework.dao.EmptyResultDataAccessException;
-import org.springframework.jdbc.core.JdbcTemplate;
+import com.shopmind.merchant.mapper.MerchantMapper;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -10,28 +10,21 @@ import java.util.Optional;
 @Repository
 public class MerchantDao {
 
-    private final JdbcTemplate jdbcTemplate;
+    private final MerchantMapper merchantMapper;
 
-    public MerchantDao(JdbcTemplate jdbcTemplate) {
-        this.jdbcTemplate = jdbcTemplate;
+    public MerchantDao(MerchantMapper merchantMapper) {
+        this.merchantMapper = merchantMapper;
     }
 
     /**
-     * 根据商家ID查询店铺信息及AI人设
+     * 根据商家ID查询店铺信息及AI人设（基于 MyBatis-Plus 实现）
      */
     public Optional<MerchantDO> findById(Long id) {
-        String sql = "SELECT id, merchant_code, merchant_name, system_prompt, status FROM t_merchant WHERE id = ? AND status = 1";
-        try {
-            MerchantDO merchant = jdbcTemplate.queryForObject(sql, (rs, rowNum) -> new MerchantDO(
-                    rs.getLong("id"),
-                    rs.getString("merchant_code"),
-                    rs.getString("merchant_name"),
-                    rs.getString("system_prompt"),
-                    rs.getInt("status")
-            ), id);
-            return Optional.ofNullable(merchant);
-        } catch (EmptyResultDataAccessException e) {
-            return Optional.empty();
-        }
+        MerchantDO merchant = merchantMapper.selectOne(
+                new LambdaQueryWrapper<MerchantDO>()
+                        .eq(MerchantDO::getId, id)
+                        .eq(MerchantDO::getStatus, 1)
+        );
+        return Optional.ofNullable(merchant);
     }
 }

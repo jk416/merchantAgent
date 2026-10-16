@@ -17,15 +17,30 @@ spring:
       port: 6379
       password: ${REDIS_PASSWORD:redis123}
       timeout: 3s
+#  ai:
+#    openai:
+#      # 支持 DeepSeek / 通义千问 / 硅基流动 / OpenAI 等任意兼容端点
+#      base-url: ${AI_BASE_URL:https://api.deepseek.com}
+#      api-key: ${AI_API_KEY:sk-fake-key-for-test}
+#      chat:
+#        options:
+#          model: ${AI_MODEL:deepseek-chat}
+#          temperature: 0.7
   ai:
-    openai:
-      # 支持 DeepSeek / 通义千问 / 硅基流动 / OpenAI 等任意兼容端点
-      base-url: ${AI_BASE_URL:https://api.deepseek.com}
-      api-key: ${AI_API_KEY:sk-fake-key-for-test}
+    dashscope:
+      # 可以配置通义千问 / 阿里云百炼 API-KEY，或兼容 OpenAI/DeepSeek 的 key
+      api-key: ${AI_DASHSCOPE_API_KEY:sk-ws-H.PPMPXMR.rr1Q.MEUCIHlcGbmMEJmHR1ZqQCeRHaaqkEyQTPrsmVltuYoj_-EsAiEAq3pqSrjeV1psN2f9adphV_IFvV6HlYDW5aCawlzVTW0}
       chat:
         options:
-          model: ${AI_MODEL:deepseek-chat}
-          temperature: 0.7
+          model: qwen-plus
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
 
 management:
   endpoints:
