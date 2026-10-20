@@ -21,6 +21,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -50,15 +51,18 @@ public class OrderConsumer {
     private final OrderMapper orderMapper;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
+    private final TransactionTemplate transactionTemplate; // 👈 1. 声明它
+
 
     public OrderConsumer(ProductMapper productMapper,
                          OrderMapper orderMapper,
                          StringRedisTemplate redisTemplate,
-                         ObjectMapper objectMapper) {
+                         ObjectMapper objectMapper, TransactionTemplate transactionTemplate) {
         this.productMapper = productMapper;
         this.orderMapper = orderMapper;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @PostConstruct
@@ -101,7 +105,7 @@ public class OrderConsumer {
         //    使用 redisTemplate.opsForValue().setIfAbsent("mq:consumed:" + dto.orderNo(), "1", Duration.ofDays(1));
         //    如果返回 false，说明是重复投递的消息，直接打印 warn 日志并 return，绝不重复消费！
         Boolean isConsumed = redisTemplate.opsForValue().setIfAbsent("mq:consumed:" + dto.orderNo(), "1", Duration.ofDays(1));
-        if (!isConsumed) {
+        if (Boolean.FALSE.equals(isConsumed)) {
             log.warn("检测到重复消息，已消费，直接返回, msgId={}, orderNo={}", msg.getMsgId(), dto.orderNo());
             return;
         }
@@ -114,16 +118,6 @@ public class OrderConsumer {
         //        // 幂等成功，正常返回
         //    }
         try {
-            // a. 更新 DB 库存：LambdaUpdateWrapper, stock_count = stock_count - dto.quantity()
-            LambdaUpdateWrapper<ProductDO> updateWrapper = new LambdaUpdateWrapper<>();
-            updateWrapper.eq(ProductDO::getId, dto.productId())
-                    .ge(ProductDO::getStockCount, dto.quantity())
-                    .setSql("stock_count = stock_count - " + dto.quantity());
-            int rows = productMapper.update(null, updateWrapper);
-            if (rows <= 0) {
-                log.error("💥 [消费异常] 数据库库存不足，阻断落库！orderNo={}", dto.orderNo());
-                return;
-            }
             // b. 插入 t_order 订单表
             OrderDO order = OrderDO.builder()
                     .orderNo(dto.orderNo())
@@ -136,10 +130,35 @@ public class OrderConsumer {
                     .userId(dto.userId())
                     .productName(dto.productName())
                     .build();
-            orderMapper.insert(order);
+            transactionTemplate.executeWithoutResult(status -> {
+                orderMapper.insert(order);
+                log.info("📦 [异步削峰落库成功] 订单已平稳入库, 订单号: {}", dto.orderNo());
+                // a. 更新 DB 库存：LambdaUpdateWrapper, stock_count = stock_count - dto.quantity()
+                LambdaUpdateWrapper<ProductDO> updateWrapper = new LambdaUpdateWrapper<>();
+                updateWrapper.eq(ProductDO::getId, dto.productId())
+                        .ge(ProductDO::getStockCount, dto.quantity())
+                        .setSql("stock_count = stock_count - " + dto.quantity());
+                int rows = productMapper.update(null, updateWrapper);
+                if (rows <= 0) {
+                    // 抛出运行时异常，让 TransactionTemplate 自动回滚上面插入的订单！
+                    throw new RuntimeException("数据库库存不足，阻断落库！orderNo=" + dto.orderNo());
+                }
+            });
             log.info("📦 [异步削峰落库成功] 订单已平稳入库, 订单号: {}", dto.orderNo());
+
         } catch (DuplicateKeyException e) {
-            log.warn("检测到数据库唯一键冲突，重复消息已成功被 MySQL 幂等拦截, orderNo={}", dto.orderNo());
+            // 【分支 1：幂等命中】
+            // 订单已存在，属于正常幂等现象！
+            // 绝对不要删除 Redis key（让它继续在内存中挡住后续重复消息）
+            // 正常 return，不抛异常，MQ 会自动提交 CONSUME_SUCCESS，不再重复消费！
+            log.warn("🛡️ [MySQL 唯一索引防线] 检测到重复主键冲突，幂等放行, orderNo={}", dto.orderNo());
+        } catch (Exception e) {
+            // 【分支 2：真正的系统故障】（数据库断网、死锁、超时等）
+            log.error("💥 [消费异常] 订单落库发生未知系统异常，清除 Redis 标记并触发 MQ 重试, orderNo={}", dto.orderNo(), e);
+            // 1. 补偿清理 Redis 占位，为下次重试放行铺路
+            redisTemplate.delete("mq:consumed:" + dto.orderNo());
+            // 2. 必须向外抛出异常！让外层监听器捕获后向 RocketMQ 返回 RECONSUME_LATER！
+            throw e;
         }
     }
 
