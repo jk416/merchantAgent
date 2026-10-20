@@ -91,15 +91,26 @@ public class OrderConcurrencyTest {
         long startTime = System.currentTimeMillis();
         startSignal.countDown();
 
-        // 5. 等待所有线程执行完毕
+        // 5. 等待所有线程执行完毕（前台响应耗时）
         doneSignal.await();
         long costTime = System.currentTimeMillis() - startTime;
         executorService.shutdown();
 
+        log.info("⏳ [异步削峰验证] 前台请求已全部完成（耗时 {} ms），等待 RocketMQ 消费者异步平稳写入 MySQL...", costTime);
+        long deadline = System.currentTimeMillis() + 15000;
+        long actualCreatedOrders = 0;
+        while (System.currentTimeMillis() < deadline) {
+            Long currentOrderCount = orderMapper.selectCount(new LambdaQueryWrapper<OrderDO>().eq(OrderDO::getProductId, TEST_PRODUCT_ID));
+            actualCreatedOrders = currentOrderCount - initialOrderCount;
+            if (actualCreatedOrders >= 100) {
+                break;
+            }
+            Thread.sleep(1000);
+            log.info("... 消费者平稳写入中，当前已入库: {} 单 ...", actualCreatedOrders);
+        }
+
         // 6. 查库复盘
         ProductDO finalProduct = productMapper.selectById(TEST_PRODUCT_ID);
-        Long finalOrderCount = orderMapper.selectCount(new LambdaQueryWrapper<OrderDO>().eq(OrderDO::getProductId, TEST_PRODUCT_ID));
-        long actualCreatedOrders = finalOrderCount - initialOrderCount;
         String redisRemainingStock = redisTemplate.opsForValue().get("seckill:stock:" + TEST_PRODUCT_ID);
 
         log.info("========================= 压测复盘报告 =========================");

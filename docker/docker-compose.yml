@@ -49,3 +49,30 @@ services:
       - "8088:8080"   # Nacos 3 控制台
     volumes:
       - ./data/nacos:/home/nacos/data
+
+  namesrv:
+    image: apache/rocketmq:5.3.0
+    container_name: sm-rmqnamesrv
+    restart: unless-stopped
+    command: sh mqnamesrv
+    ports:
+      - "9876:9876"
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx256m -Xmn128m"
+
+  broker:
+    image: apache/rocketmq:5.3.0
+    container_name: sm-rmqbroker
+    restart: unless-stopped
+    command: sh mqbroker -n namesrv:9876 -c /home/rocketmq/rocketmq-5.3.0/conf/broker.conf
+    ports:
+      - "10909:10909"
+      - "10911:10911"
+      - "10912:10912"
+      - "8081:8081"
+    environment:
+      JAVA_OPT_EXT: "-Xms256m -Xmx512m -Xmn128m"
+    volumes:
+      - ./rocketmq/conf/broker.conf:/home/rocketmq/rocketmq-5.3.0/conf/broker.conf
+    depends_on:
+      - namesrv

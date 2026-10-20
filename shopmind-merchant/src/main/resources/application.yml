@@ -50,3 +50,10 @@ management:
   endpoint:
     health:
       show-details: always
+
+rocketmq:
+  name-server: 127.0.0.1:9876
+  producer:
+    group: seckill-order-producer-group
+  topic:
+    seckill-order: SECKILL_ORDER_TOPIC
