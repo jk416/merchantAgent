@@ -385,3 +385,29 @@
        - 请求进入时，先在应用层预估输入的 Token 数量（通过本地轻量 Tokenizer 估算）；
        - 尝试从 Redis 令牌桶中预扣对应的 Token 额度；
        - 若当前分钟的 Token 额度不足，立刻排队或降级拦截，彻底构筑起企业资金与服务稳定性的双重防火墙。
+
+---
+
+## 模块十二：消息队列 RocketMQ 异步削峰与双重幂等设计
+
+### Q27：在分布式高并发秒杀场景中，如何防止消息重复消费？结合 ShopMind 谈谈你的双重幂等与异常处理设计？
+- **业务场景**：
+  在秒杀抢购落库中，前台接口快速预扣减并投递 RocketMQ，后台消费端异步写入 MySQL。网络抖动或 Broker 重试时必须保证绝不重复生成订单、绝不多扣库存。
+- **底层原理与机制（核心得分点）**：
+  1. **明确 MQ 底层交付契约（At Least Once）**：
+     - 主流分布式消息队列（RocketMQ / Kafka）因网络抖动、ACK 超时重试、消费者 Rebalance 等原因，原生只保障“至少投递一次（At Least Once）”，物理上无法保证绝对不重复投递。
+     - 防重复消费的责任 100% 由消费端通过“业务幂等性”实现。
+  2. **双重防线协同架构（Redis 内存判重 + MySQL 唯一索引兜底）**：
+     - **第一道防线（Redis 内存幂等防重）**：
+       - 利用唯一业务单号 orderNo 执行 redisTemplate.opsForValue().setIfAbsent("mq:consumed:" + orderNo, "1", Duration.ofDays(1))；
+       - 返回 false 直接记录日志并 ACK 提交，微秒级拦截 99.9% 无效重复消息，保护下游数据库连接池；
+       - 采用 Boolean.FALSE.equals(isConsumed) 防范包装类自动拆箱引发的 NPE。
+     - **第二道防线（MySQL 物理唯一索引兜底）**：
+       - t_order 表增加 UNIQUE KEY uk_order_no (order_no)；
+       - 即使极端情况下 Redis 抖动漏放，数据库层抛出 DuplicateKeyException 形成绝对物理防线。
+  3. **编程式本地事务（TransactionTemplate）与顺序防线**：
+     - 使用 TransactionTemplate 规避内部私有方法导致 Spring @Transactional AOP 代理失效问题；
+     - 严格遵循“先 insert 订单，再 update 扣库存”顺序。若顺序颠倒，重复消息在 insert 失败前就会多扣一次库存；先插订单能让重复消息第一时间因唯一键冲突触发事务自动回滚，杜绝超扣。
+  4. **精准异常分流策略（关键踩坑防丢单）**：
+     - **业务幂等命中（DuplicateKeyException）**：订单已在库中，不删 Redis Key，不抛出异常，正常返回给 MQ 提交消费成功 ACK，避免 16 次无谓死循环重试；
+     - **系统故障（非唯一键异常，如 DB 连接超时/断网/死锁）**：说明落库失败，必须主动清理 Redis Key（redisTemplate.delete），并且必须 throw e; 让外层向 RocketMQ 返回 RECONSUME_LATER，触发阶梯退避重试，杜绝静默吞单资损。
