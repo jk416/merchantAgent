@@ -31,6 +31,8 @@ public class MerchantDO {
 
     private Integer status;
 
+    private java.math.BigDecimal balance;
+
     private LocalDateTime createdAt;
 
     private LocalDateTime updatedAt;
