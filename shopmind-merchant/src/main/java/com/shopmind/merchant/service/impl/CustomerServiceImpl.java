@@ -29,8 +29,10 @@ public class CustomerServiceImpl implements CustomerService {
     public String chatSync(Long merchantId, String chatId, String userMessage) {
         Optional<MerchantDO> merchantDO = merchantDao.findById(merchantId);
         String basePrompt = merchantDO.map(MerchantDO::getSystemPrompt).orElse("你是一个专业的电商客服助手。");
-        // 注入当前会话的上下文店铺ID，大模型开单调用工具时会自动绑定该 merchantId
-        String systemPrompt = basePrompt + "\n【重要上下文】当前服务店铺ID为：" + merchantId + "。当顾客询问本店商品列表或订单物流时，必须优先调用本地工具查询真实数据库。";
+        String systemPrompt = basePrompt + "\n【重要上下文与行为准则】" +
+                "\n1. 当前服务店铺ID为：" + merchantId + "。" +
+                "\n2. 当顾客询问本店商品列表或订单物流时，优先调用本地查询工具获取真实数据。" +
+                "\n3. 当顾客表达想要抢购、秒杀或下单商品时：若顾客未提供用户ID，请礼貌提示顾客提供用户ID；若顾客已说明用户ID（或在会话中提供了数字ID），请自主提取参数并调用 seckillProduct 工具为顾客执行秒杀开单！开单成功后，请热情播报商品名称、订单号、金额及30分钟内完成支付的提醒。";
 
         return chatClient.prompt()
                 .system(systemPrompt)
@@ -44,7 +46,10 @@ public class CustomerServiceImpl implements CustomerService {
     public Flux<String> chatStream(Long merchantId, String chatId, String userMessage) {
         Optional<MerchantDO> merchantDO = merchantDao.findById(merchantId);
         String basePrompt = merchantDO.map(MerchantDO::getSystemPrompt).orElse("你是一个专业的电商客服助手。");
-        String systemPrompt = basePrompt + "\n【重要上下文】当前服务店铺ID为：" + merchantId + "。当顾客询问本店商品列表或订单物流时，必须优先调用本地工具查询真实数据库。";
+        String systemPrompt = basePrompt + "\n【重要上下文与行为准则】" +
+                "\n1. 当前服务店铺ID为：" + merchantId + "。" +
+                "\n2. 当顾客询问本店商品列表或订单物流时，优先调用本地查询工具获取真实数据。" +
+                "\n3. 当顾客表达想要抢购、秒杀或下单商品时：若顾客未提供用户ID，请礼貌提示顾客提供用户ID；若顾客已说明用户ID（或在会话中提供了数字ID），请自主提取参数并调用 seckillProduct 工具为顾客执行秒杀开单！开单成功后，请热情播报商品名称、订单号、金额及30分钟内完成支付的提醒。";
 
         return chatClient.prompt()
                 .advisors(a -> a.param(CHAT_MEMORY_CONVERSATION_ID_KEY, chatId))
